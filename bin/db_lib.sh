@@ -102,7 +102,13 @@ job_request_insert() {
     VALUES
     (FROM_BASE64('$b64'), '$content_type', $score, '$status', '$file_type', '$request_type', '$priority', '$file_name', $user_id);"
 
-  echo "[+] inserted job_request for file: $file_name"
+ 
+ #ADDED BY PHENIX: Fetch ID of row we just added
+ local new_id
+ new_id=$(db_exec "SELECT LAST_INSERT_ID();" | tail -n 1)
+
+ echo "$new_id"
+
 }
 
 # UPDATE ---------------------------------------------------------------------
