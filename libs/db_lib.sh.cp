@@ -87,7 +87,9 @@ job_request_insert() {
 
   [[ ! -f "$file_path" ]] && { echo "[!] file not found: $file_path"; return 1; }
 
-  # Escape metadata
+  local b64
+  b64="$(base64 < "$file_path" | tr -d '\r\n')"
+
   content_type="$(sql_escape "$content_type")"
   status="$(sql_escape "$status")"
   file_type="$(sql_escape "$file_type")"
@@ -95,32 +97,19 @@ job_request_insert() {
   priority="$(sql_escape "$priority")"
   file_name="$(sql_escape "$file_name")"
 
-  # Build SQL without embedding file content
-    local sql="
-        INSERT INTO job_request
-	  (file_content, file_content_content_type, score, status, file_type, request_type, priority, file_name, user_id)
-	VALUES
-	  (FROM_BASE64(@filedata), '$content_type', $score, '$status', '$file_type', '$request_type', '$priority', '$file_name', $user_id);
-	SELECT LAST_INSERT_ID();
-       "
-
-  # Run SQL and stream file content safely
-    base64 "$file_path" | tr -d '\r\n' | {
-      local cmd="$(_db_mysql_cmd)"
-      $cmd --silent --raw <<EOF
-SET @filedata='$(cat)';
-$sql
-EOF
-	  }
-
+  db_exec "INSERT INTO job_request
+    (file_content, file_content_content_type, score, status, file_type, request_type, priority, file_name, user_id)
+    VALUES
+    (FROM_BASE64('$b64'), '$content_type', $score, '$status', '$file_type', '$request_type', '$priority', '$file_name', $user_id);"
 
  
  #ADDED BY PHENIX: Fetch ID of row we just added
  local new_id
- new_id=$(db_exec "SELECT LAST_INSERT_ID();" 2>/dev/null | tail -n 1)
+ new_id=$(db_exec "SELECT LAST_INSERT_ID();" | tail -n 1)
+
+ echo "$new_id"
 
 }
-
 
 # UPDATE ---------------------------------------------------------------------
 
@@ -130,7 +119,7 @@ job_request_update_status() {
   [[ -z "$id" || -z "$status" ]] && { echo "[!] usage: job_request_update_status <id> <status>"; return 1; }
 
   status="$(sql_escape "$status")"
-  db_exec "UPDATE job_request SET status='$status' WHERE id=$id;" >/dev/null 2>&1
+  db_exec "UPDATE job_request SET status='$status' WHERE id=$id;"
   echo "[+] updated status for id=$id"
 }
 
@@ -139,7 +128,7 @@ job_request_update_score() {
   local score="$2"
   [[ -z "$id" || -z "$score" ]] && { echo "[!] usage: job_request_update_score <id> <score>"; return 1; }
 
-  db_exec "UPDATE job_request SET score=$score WHERE id=$id;" >/dev/null 2>&1
+  db_exec "UPDATE job_request SET score=$score WHERE id=$id;"
   echo "[+] updated score for id=$id"
 }
 
@@ -149,6 +138,6 @@ job_request_update_priority() {
   [[ -z "$id" || -z "$priority" ]] && { echo "[!] usage: job_request_update_priority <id> <priority>"; return 1; }
 
   priority="$(sql_escape "$priority")"
-  db_exec "UPDATE job_request SET priority='$priority' WHERE id=$id;" >/dev/null 2>&1
+  db_exec "UPDATE job_request SET priority='$priority' WHERE id=$id;"
   echo "[+] updated priority for id=$id"
 }
