@@ -146,3 +146,25 @@ decode_payload() {
 
   printf '%s' "$payload" | base64 -d
 }
+# --- Main Execution ---
+main() {
+  require_cmd jq
+  require_cmd kcat
+  require_cmd python3
+
+  payload="$(read_payload "$@")" || {
+    echo "No Payload provided" >&2
+    exit 1
+  }
+
+  if ! validate_base64 "$payload"; then
+    echo "Invalid base64 payload" >&2
+    exit 1
+  fi
+
+  json="$(build_message "$payload" "$INPUT_TOPIC" "$MESSAGE_ORIGIN" "$MESSAGE_SOURCE" "$MESSAGE_TYPE")"
+
+  publish_message "$INPUT_TOPIC" "$json"
+}
+
+main "$@"
