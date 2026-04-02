@@ -14,57 +14,60 @@ mkdir -p "$QUARANTINE_DIR" "$OUTPUT_DIR"
 
 # --- Main Logic ---
 
-if [ "$#" -lt 2 ]; then
-    echo "Usage: $0 <file_path> <LogType>"
-    echo "Example: $0 network.pcap PCAP"
-    exit 1
+# FETCH LATEST PENDING JOB (ADDED BY PHENIX 4/1/26)
+read REQ_ID FILE_NAME TYPE <<< "$(job_request_get_latest_pending)"
+
+if [ -z "$REQ_ID" ]; then
+   echo "[!] No pending jobs found."
+   insert_execution_report NULL "NO_JOBS" "No pending jobs found."   # Send execution status report to job_execution_report 
+   exit 0
 fi
 
-FILE_PATH=$1
-TYPE=$2
+echo "[+] Loaded job_request ID=$REQ_ID"
+insert_execution_report "$REQ_ID" "STARTED" "Loaded job_request ID=$REQ_ID"   # Send execution status report to job_execution_report 
+echo "[+] File: $FILE_NAME"
+echo "[+] Type: $TYPE"
 
-# ADDED BY PHENIX: Insert Initial DB record BEFORE verification/sanitization
-REQ_ID=$(job_request_insert "$FILE_PATH" "$TYPE" "PENDING" "$TYPE" "FILE_INGEST" "NORMAL" "$(basename "$FILE_PATH")" 1 NULL) 
-
-echo "[+] Created DB job_request with ID: $REQ_ID"
-
-if verify_log "$FILE_PATH" "$TYPE"; then
-    SANITIZED_FILE="$OUTPUT_DIR/$(basename "$FILE_PATH")"
+if verify_log "$FILE_NAME" "$TYPE"; then
+    SANITIZED_FILE="$OUTPUT_DIR/$(basename "$FILE_NAME")"
 
     case "$TYPE" in
         PCAP|PCAPNG|CAP)
-            sanitize_pcap "$FILE_PATH"
+            sanitize_pcap "$FILE_NAME"
             send_file_to_topic "$SANITIZED_FILE" "networklog_in"
 
 	    #ADDED BY PHENIX: Update DB status after success
 	    job_request_update_status "$REQ_ID" "SUCCESS"
+            insert_execution_report "$REQ_ID" "SUCCESS" "Sanitization complete and sent to Kafka"   # Send execution status report to job_execution_report 
             ;;
         JSON)
-            sanitize_json "$FILE_PATH"
+            sanitize_json "$FILE_NAME"
             send_file_to_topic "$SANITIZED_FILE" "systemlog_in"
 	    
 	    #ADDED BY PHENIX: Update DB status after success
 	    job_request_update_status "$REQ_ID" "SUCCESS"
+            insert_execution_report "$REQ_ID" "SUCCESS" "Sanitization complete and sent to Kafka"   # Send execution status report to job_execution_report 
             ;;
         CSV|LOG|EVTX)
-            sanitize_text "$FILE_PATH"
+            sanitize_text "$FILE_NAME"
             send_file_to_topic "$SANITIZED_FILE" "systemlog_in"
 	    
 	    #ADDED BY PHENIX: Update DB status after success
 	    job_request_update_status "$REQ_ID" "SUCCESS"
+            insert_execution_report "$REQ_ID" "SUCCESS" "Sanitization complete and sent to Kafka"   # Send execution status report to job_execution_report 
             ;;
         *)
             echo "[!] Unknown LogType: $TYPE"
-
+            insert_execution_report "$REQ_ID" "FAILED_UNKNOWN_TYPE" "Unknown log type: $TYPE"   # Send execution status report to job_execution_report 
 	    # ADDED BY PHENIX: Mark DB record as failed
 	    job_request_update_status "$REQ_ID" "FAILED"
             return 1
             ;;
     esac
 else
-    echo "[!] Verification FAILED. Quarantining $FILE_PATH"
-    mv "$FILE_PATH" "$QUARANTINE_DIR/"
-
+    echo "[!] Verification FAILED. Quarantining $FILE_NAME"
+    insert_execution_report "$REQ_ID" "FAILED_VERIFICATION" "Verification failed for file: $FILE_NAME"   # Send execution status report to job_execution_report 
+    mv "$FILE_NAME" "$QUARANTINE_DIR/"
     # ADDED BY PHENIX: Mark DB record as failed
     job_request_update_status "$REQ_ID" "FAILED"
     exit 1

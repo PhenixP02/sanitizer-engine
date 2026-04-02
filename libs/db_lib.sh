@@ -33,6 +33,17 @@ sql_escape() {
 
 # READ -----------------------------------------------------------------------
 
+# ADDED BY PHENIX 4/1/26
+job_request_get_latest_pending() {
+  mysql -h 127.0.0.1 -u user -ppassword -D sanitizer_db -N -e "
+  	SELECT id, file_name, file_type
+	FROM job_request
+	WHERE status='PENDING'
+	ORDER BY id DESC
+	LIMIT 1;
+	"
+}
+
 job_request_read_all() {
   local limit="${1:-100}"
   db_exec "SELECT id, file_name, file_type, request_type, priority, status, score, user_id
@@ -71,6 +82,42 @@ job_request_export_blob() {
 }
 
 # INSERT ---------------------------------------------------------------------
+
+# ADDED BY PHENIX 4/1/26
+insert_execution_report() {
+  local job_request_id="$1"
+  local status="$2"
+  local log_message="$3"
+  local user_id="${4:-1}"   # default user_id = 1
+  local node
+  node="$(hostname)"
+
+  # Escape single quotes in log_message
+  log_message="${log_message//\'/\'\'}"
+
+  db_exec "
+  	INSERT INTO job_execution_report (
+	   start_time,
+	   execution_node,
+	   execution_log,
+	   status,
+	   job_request_id,
+	   user_id
+	) VALUES (
+	   NOW(6),
+	   'localhost.localdomain',
+	   '$LOG',
+	   '$STATUS',
+	   $REQ_ID,
+	   1
+	)
+	ON DUPLICATE KEY UPDATE
+	   end_time = NOW(6),
+	   execution_log = VALUES(execution_log),
+	   status = VALUES(status);
+   "
+}
+
 
 job_request_insert() {
   # usage:
