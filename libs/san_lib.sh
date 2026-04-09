@@ -1,5 +1,6 @@
 #!/bin/bash
 set -o pipefail
+
 # Configuration
 RULES_FILE="./sanitizer_rules.yar"
 TMP_BASE="${SANITIZER_TMP_BASE:-/tmp/sanitizer_engine}"
@@ -49,7 +50,14 @@ sanitize_base64() {
 
     # 2. Antivirus (ClamAV)
     # Using --infected to only output if a virus is found
+    VIRUS_LOG="$(clamscan --infected --no-summary "$RAW_FILE" 2>/dev/null)"
 
+    if echo "$VIRUS_LOG" | grep -q "FOUND"; then
+	    echo "{\"job_id\":\"$SAFE_JOB_ID\",\"status\":\"REJECTED\",\"threat\":\"ClamAV: $(echo "$VIRUS_LOG" | awk -F: '{print $1}')\"}"    # Create JSON message on virus found
+	    update_job_request_status "$SAFE_JOB_ID" "$STATUS_FAILED_SANITIZATION"
+	    rm -rf "$JOB_DIR"
+	    return 1
+    fi
 
     # 3. YARA Analysis
     if [ -f "$RULES_FILE" ]; then
@@ -75,7 +83,7 @@ sanitize_base64() {
             ;;
         text/html|application/json|text/x-log|application/vnd.tcpdump.pcap|text/plain)
             # Call our Python helper for structured/complex data
-            
+	    python3 "$SCRIPT_DIR/complex_sanitizer.py" "$RAW_FILE" "$CLEAN_FILE" "$MIME"             
             ;;
         *)
             # Fallback: Strip dangerous control characters (Null, ESC, etc.)
